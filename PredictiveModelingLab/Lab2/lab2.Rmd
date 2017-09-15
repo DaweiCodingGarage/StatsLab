@@ -1,0 +1,144 @@
+---
+title: "Lab2"
+author: "Merlise Clyde"
+date: "September 11, 2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo =TRUE)
+```
+
+## Topics
+
+* `termplot`  Base R
+* `avPlots`   `library(car)`  
+* interactions
+
+
+
+## Termplot Example
+
+```{r simdata, echo=T}
+n = 100
+logx1 = rnorm(n)
+x1 = exp(logx1)
+x2 = abs(rnorm(n))
+logy = .5 + 3*logx1 - 2*sqrt(x2) + rnorm(n)
+simdat = data.frame(X1=x1, X2 = x2, Y=exp(logy))
+```
+
+## Termplot output
+```{r}
+termplot(lm(Y ~ X1 + X2, data=simdat), terms = "X1",
+         partial.resid = T, se=T, rug=T,
+         smooth = panel.smooth)
+
+```
+
+## Termplot output
+```{r}
+termplot(lm(Y ~ X1 + X2, data=simdat), terms = "X2",
+         partial.resid = T, se=T, rug=T, 
+         smooth = panel.smooth)
+```
+
+
+##  termplot with transformation of Y and X1
+
+```{r}
+termplot(lm(log(Y) ~ log(X1) + X2, data=simdat),
+         terms = "log(X1)", partial.resid = T, se=T, rug=T, 
+         smooth = panel.smooth)
+```
+
+##  termplot with transformation of Y and X1
+
+```{r}
+termplot(lm(log(Y) ~ log(X1) + X2, data=simdat), terms = "X2",
+         partial.resid = T, se=T, rug=T, smooth = panel.smooth)
+
+```
+
+##  termplot with transformation of Y, X1, and X2
+
+```{r}
+termplot(lm(log(Y) ~ log(X1) + sqrt(X2), data=simdat), terms = "sqrt(X2)",
+         partial.resid = T, se=T, rug=T, smooth = panel.smooth)
+```
+
+## What is in a term plot?
+
+*  x-axis is the (untransformed) variable in your dataframe  $(X1, X2)$
+* line is the "term" of that variable's contribution to $f(x)$ 
+* y-axis is partial residuals for term
+* `partial.resid = T` adds the partial residuals to the plot
+* `rug = T`  shows location of data on axes
+* `se = T`  adds the SE of the term's contribution to $f(x)$
+* `smooth = panel.smooth`  adds "smoothed" means to plot
+
+##  Terms
+
+$$Y = \hat{\beta}_0 + \hat{\beta}_1 X1 + \hat{\beta}_2 X2 + e$$
+Equivalent to centered model
+
+$$Y = \bar{Y} + \hat{\beta}_1 (X1 - \bar{X1}) + \hat{\beta}_2 (X2 - \bar{X2}) + e$$
+Terms are coefficient estimates times centered predictors
+ $$\hat{\beta}_1 (X1 - \bar{X1}) $$
+ $$\hat{\beta}_2 (X2 - \bar{X2}) $$
+
+##  Terms with transformations
+
+$$\log(Y) = \hat{\beta}_0 + \hat{\beta}_1 \log(X1) + \hat{\beta}_2 X2 + e$$
+Equivalent to centered model
+
+$$\log(Y) = \bar{\log(Y)} + \hat{\beta}_1 (\log(X1) - \bar{\log(X1)}) + \hat{\beta}_2 (X2 - \bar{X2}) + e$$
+Terms are coefficient estimates times centered "predictors"
+ $$\hat{\beta}_1 (\log(X1) - \bar{\log(X1)}) $$
+
+## partial residuals for a term
+
+$$\log(Y) = \bar{\log(Y)} + \hat{\beta}_1 (\log(X1) - \bar{\log(X1)}) + \hat{\beta}_2 (X2 - \bar{X2}) + e$$
+
+$$\log(Y) - (\bar{\log(Y)} + \hat{\beta}_1 (\log(X1) - \bar{\log(X1)})) =  \hat{\beta}_2 (X2 - \bar{X2}) + e$$
+
+* Lefthand side takes response and removes the part of the response that is explained by $X1$  
+
+* Equal to the `term` for $X2$ plus the residual $e$
+
+* part of residual variation that is not explained by the other terms that potentially can be explained by $X2$  = partial residual for $X2$
+
+* partial residual for X1  
+
+$$\hat{\beta}_1 (\log(X1) - \bar{\log(X1)})  + e$$
+## Added Variable Plots
+
+From `library(car)`
+
+```{r}
+library(car)
+mod1 = lm(Y ~ X1 + X2, data=simdat)
+avPlots(mod1)
+```
+
+In the added variable plot, on the left we regress $Y$ on $X2$ and find the residuals ($Y$ axis) and plot against the residuals from regressing $X1$ on $X2$ and plot those residuals on the $x$ axis.  If after removing the effect of $X2$ on both $Y$ and $X1$, $X1$ can explain the residual variation, then we should see a relationship in the plot.   The slope of the line in the added variable plot is the adjusted regression coefficient. 
+Like termplot this can also show if the linear term in $X1$ is appropriate or perhaps there is a nonlinear relationship.  
+
+
+##  All possible interactions
+
+
+```{r}
+lm(log(Y) ~ (log(X1) + sqrt(X2))^2, data=simdat)
+```
+
+Equivalent to model formula `log(X1) + sqrt(X2) + log(X1):sqrt(X2)`
+
+## Selective proposal Interactions
+
+* add interactions if main effects are "significant"
+
+* think about possible reason for interaction (science)
+
+
+
+
