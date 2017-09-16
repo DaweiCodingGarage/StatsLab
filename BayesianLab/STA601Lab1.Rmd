@@ -1,0 +1,155 @@
+---
+title: "STA601Lab1"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Suppose we want to estimate theta, the proportion of animals that can fly, from a random sample of animals.
+
+```{r dataset}
+library(cluster)
+data(animals)
+```
+
+
+
+The indicators are coded to take on values 2, which represent the animal has the characteristic and 1 otherwise. We want to replace 2,1 into 1,0.
+
+```{r transformation}
+animals <- apply(animals, c(1, 2), function(x) {x - 1})
+```
+
+Since we're interested in theta, the proportion of animals that can fly, we should look at the number of animals in the sample that can fly.
+
+```{r sum}
+sum(animals[, "fly"])
+```
+So we have y=4 from a Binomial(n=20, theta) distribution.
+
+
+Suppose we believe Suppose we believed:
+
+big theta={0.01,…,0.99};
+p(theta)=1/99 for each theta belongs to big theta.
+
+This is a uniform prior on theta.
+
+We can compute the posterior distribution using Bayes' rule.
+
+```{r Bayes Rule}
+y <- sum(animals[, "fly"])
+n <- nrow(animals)
+
+Theta.1 <- seq(0.01, 0.99, by = 0.01)
+py.theta.1 <- dbinom(y, n, Theta.1)
+ptheta.1 <- rep(1/length(Theta.1), length(Theta.1))
+pytheta.1 <- py.theta.1*ptheta.1
+
+ptheta.y.1 <- pytheta.1/(sum(pytheta.1))
+```
+
+Plot using Base R 
+
+```{r Plot}
+plot(Theta.1, ptheta.y.1, type = "l", 
+     col = "blue",
+     xlab = "theta",
+     ylab = "p(theta|y)", 
+     cex.lab = 1, cex.axis = 1)
+
+lines(Theta.1, ptheta.1, col = "red", lty = 1)
+
+abline(v = mean(animals[, "fly"]), lty = 2)
+
+legend("topright", lty = c(1, 1, 2), 
+       col = c("blue", "red", "black"),
+       legend = c("p(theta|y)", "p(theta)", 
+                  "y/n"))
+```
+
+Compute Posterior Mean and Variance
+```{r Posterior Mean and Variance}
+etheta.y.1 <- sum(ptheta.y.1*Theta.1)
+etheta.y.1
+
+vtheta.y.1 <- sum(ptheta.y.1*(Theta.1 - etheta.y.1)^2)
+vtheta.y.1
+```
+
+
+Suppose we believe prior to be uniform distribution on interval (0,1)
+
+This prior corresponds to the Beta(1, 1) distribution.
+
+Because the beta distribution is conjugate for the binomial sampling model, this means that we know that the posterior distribution of theta will be a beta distribution, with parameters we have closed form solutions for posterior beta
+
+```{r new param and plot}
+atheta.y.2 <- 1 + y
+btheta.y.2 <- 1 + n - y
+
+Theta.2 <- seq(0.01, 0.99, by = 0.01)
+ptheta.2 <- dbeta(Theta.2, 1, 1)
+ptheta.y.2 <- dbeta(Theta.2, atheta.y.2, 
+                    btheta.y.2)
+
+plot(Theta.2, ptheta.y.2, type = "l", 
+     col = "blue",
+     xlab = "theta",
+     ylab = "p(theta|y)", 
+     cex.lab = 1, cex.axis = 1)
+
+lines(Theta.2, ptheta.2, col = "red", lty = 1)
+abline(v = mean(animals[, "fly"]), lty = 2)
+legend("topright", lty = c(1, 1, 2), 
+       col = c("blue", "red", "black"),
+       legend = c("p(theta|y)", "p(theta)", 
+                  "y/n"))
+```
+
+We can directly compute the posterior mean from what we know about the beta distribution.
+```{r posterior mean and variance}
+
+etheta.y.2 <- atheta.y.2/(atheta.y.2 + btheta.y.2)
+etheta.y.2
+
+vtheta.y.2 <- atheta.y.2*btheta.y.2/((atheta.y.2 + btheta.y.2)^2*(atheta.y.2 + btheta.y.2 + 1))
+vtheta.y.2
+```
+Suppose we believed:
+
+Big theta=(0,1);
+Expectation of theta=0.43, i.e. about 2/5 of animals fly;
+Variance of theta=0.03, i.e. we're pretty certain that theta around 0.43.
+
+Again, we can directly compute the posterior mean, variance and other properties.
+```{r prior we believe}
+atheta.y.3 <- 3 + y
+btheta.y.3 <- 4 + n - y
+
+Theta.3 <- seq(0.01, 0.99, by = 0.01)
+ptheta.3 <- dbeta(Theta.3, 3, 4)
+ptheta.y.3 <- dbeta(Theta.3, atheta.y.3, 
+                    btheta.y.3)
+
+plot(Theta.3, ptheta.y.3, type = "l", 
+     col = "blue",
+     xlab = "theta",
+     ylab = "p(theta|y)", 
+     cex.lab = 1, cex.axis = 1)
+
+lines(Theta.3, ptheta.3, col = "red", lty = 1)
+abline(v = mean(animals[, "fly"]), lty = 2)
+legend("topright", lty = c(1, 1, 2), 
+       col = c("blue", "red", "black"),
+       legend = c("p(theta|y)", "p(theta)", 
+                  "y/n"))
+
+etheta.y.3 <- atheta.y.3/(atheta.y.3 + btheta.y.3)
+etheta.y.3
+
+vtheta.y.3 <- atheta.y.3*btheta.y.3/((atheta.y.3 + btheta.y.3)^2*(atheta.y.3 + btheta.y.3 + 1))
+vtheta.y.3
+```
