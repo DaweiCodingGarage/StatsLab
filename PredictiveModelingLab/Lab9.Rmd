@@ -1,0 +1,194 @@
+---
+title: 'Lab9: R Notebook'
+output:
+  html_document: default
+  html_notebook: default
+---
+
+## Introduction to JAGS
+
+- JAGS is "Just Another Gibbs Sampler",
+
+- High level scripting language for automatic MCMC for Bayesian models
+
+- to run on your own machine, you will need to install jags locally (see computing resources on website for links)
+
+- Download the latest JAGS from [here](https://sourceforge.net/projects/mcmc-jags/files/JAGS/)
+
+- [Here](http://www.jkarreth.net/files/bayes-cph_Tutorial-JAGS.pdf) is a good online tutorial with lots of demos. This tutorial also walks you through installing JAGS on your local machine step by step
+
+- to use JAGS we need to specify 
+    + data & fixed parameters
+    + model (sampling model + prior distributions)
+    + starting values (optional)
+    + parameters to save
+    + options for running the MCMC
+  
+##  Model specification
+
+JAGS lets you write out the distributions using a syntax that is similar to R's functions.   This can be written in R and then passed onto JAGS.
+
+Let's define a function for the Bayesian Ridge Regression Model
+
+```{r}
+rr.model = function() {
+
+  for (i in 1:n) {
+      mu[i] <- inprod(X[i,], beta.s)  + alpha0
+      # alpha are parameters in scaled model
+      Y[i] ~ dnorm(mu[i], phi)
+  }
+  phi ~ dgamma(1.0E-6, 1.0E-6)  # approximate p(phi) = 1/phi
+  alpha0  ~ dnorm(0, 1.0E-10)  # approximate p(alpha_0) = 1
+
+  for (j in 1:p) {
+      prec.beta[j] <- lambda.beta*phi
+      beta.s[j] ~ dnorm(0, prec.beta[j])
+  }
+# Induce Cauchy Prior on beta
+  lambda.beta ~ dgamma(.5, .5)
+#   lambda.beta = 3.06
+  for (j in 1:p) {
+      beta[j] <- beta.s[j]/scales[j]   # rescale
+  }
+  # transform intercept to original units (uncenter)
+  beta0 <- alpha0 - inprod(beta, Xbar)
+
+  sigma <- pow(phi, -.5)
+}
+```
+
+
+This function assumes that the design matrix has been scaled and centered ahead of time.  This is computationally more efficient as a one time calculation rather than doing it within the JAGS code.
+
+- Stochastic nodes
+
+- deterministic nodes
+
+- assignment needs to use `<-` rahter than `=`  (not really `R`)
+
+## Data
+
+
+All quantities that are in the function need to be either generated (stochastic) or calculated (deterministic) in the function or available through the data passed to JAGS.
+
+For say the college data:
+
+```{r}
+library(ISLR)
+data(College)
+# JAGS needs a matrix not a dataframe
+X = model.matrix(sqrt(Apps) ~ ., data=College)
+X = X[,-1]  # drop intercept
+
+# Create a data list with inputs for JAGS
+scales = apply(X, 2, FUN=function(x) {
+  sd(x)*sqrt((length(x) - 1) / length(x))})
+Xbar = apply(X, 2, mean)
+scaled.X = scale(X, center=Xbar, scale = scales)
+data = list(Y = sqrt(College$Apps),   # variance stabilizing transformation
+            X=scaled.X, p=ncol(X))
+data$n = length(data$Y)
+data$scales = scales
+data$Xbar = Xbar
+
+```
+
+
+## Parameters
+
+we can save any of the stochastic or deterministic nodes
+
+```{r}
+parameters = c("alpha0","beta.s", "beta", "beta0", "lambda.beta", "sigma")
+```
+
+## Running JAGS
+
+We will run JAGS through R using functions in the R2jags package.
+
+```{r}
+library(R2jags)
+rr.sim = jags(data, inits=NULL, 
+              parameters.to.save=parameters,
+              model.file=rr.model,  
+              n.iter=10000)
+
+theta = as.mcmc(rr.sim$BUGSoutput$sims.matrix)  # create an MCMC object 
+
+```
+
+You should see a progress bar as this runs
+
+## Output
+
+Let's look at the output:  the summary function just tells us the names of objects and their size/type
+
+```{r}
+summary(rr.sim) 
+```
+
+
+Plots and basic diagnostics
+
+```{r}
+plot(rr.sim)
+```
+
+
+```{r}
+print(rr.sim)
+```
+
+For more details on DIC, see wikipedia [here](https://en.wikipedia.org/wiki/Deviance_information_criterion).
+
+Compare to Ridge Regression:
+
+```{r}
+library(MASS)
+college.ridge = lm.ridge(sqrt(Apps) ~ ., data=College, lambda=seq(0, 10, length=50))
+select(college.ridge)
+best = which.min(college.ridge$GCV)
+best.rr = lm.ridge(sqrt(Apps) ~ ., data=College, 
+                   lambda=college.ridge$lambda[best])
+
+bayes.rr = rr.sim$BUGSoutput$summary
+beta.s = bayes.rr[grep("beta.s", rownames(bayes.rr)), "mean" ]
+beta = bayes.rr[grep("beta\\[", rownames(bayes.rr)), "mean" ]
+
+
+plot(coef(best.rr)[-1], beta, xlab="Ridge Regression", ylab="Bayes Posterior Mean (scaled)")
+abline(0,1)
+```
+
+
+Check ??
+
+## HPD Intervals and Posterior Density for Lambda
+
+```{r}
+hist(theta[,"lambda.beta"], prob=T, xlab=expression(lambda[beta]),
+     main="Posterior Distribution")
+lines(density(theta[,"lambda.beta"]))
+densplot(theta[,"lambda.beta"], xlab =expression(lambda[beta]) )
+```
+
+
+```{r}
+HPDinterval(as.mcmc(theta[,"lambda.beta"]))
+```
+
+
+How does the GCV estimate of  $\lambda$ compare to the posterior mean? or where does it fall in the distribution
+
+## To do  or think about
+
+
+1.  How would you implement a predictive check for  ridge regression 
+    (frequentist or Bayesian)?
+
+2.  Explore out of sample errors or coverage?  How does this compare to your earlier results?
+
+3.  What about other model diagnostics?
+
+4.  Look around at R packages that implement Ridge regression.  How many provide uncertainty estimates associated with the $\beta$s or predictions?

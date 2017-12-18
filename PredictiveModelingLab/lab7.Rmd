@@ -1,0 +1,87 @@
+---
+title: 'Lab 7: Variable Selection'
+output:
+  html_document: default
+  html_notebook: default
+---
+
+Here is a potentially usful [Reading](http://www.cbcb.umd.edu/~hcorrada/PracticalML/pdf/lectures/selection.pdf) for HW5. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+      echo = TRUE,
+      warning=FALSE,
+      message=FALSE,
+#      tidy = TRUE,
+#      tidy.opts=list(blank=FALSE, width.cutoff=60,size = 'tiny'),
+      fig.width=5, 
+      fig.height=4 )
+
+suppressMessages(library(ggplot2))
+suppressMessages(library(leaps))
+suppressMessages(library(knitr))
+```
+
+### 1. Simulate Some Data
+
+```{r simulate}
+n = 1000
+p = 5
+set.seed(20171019)
+beta = as.matrix(c(0, 1, 0, -1, -2))
+intercept = rnorm(1)
+X = matrix(rnorm(p*n), n, p)
+y = X %*% beta + 0.3 * rnorm(n) + intercept
+X = data.frame(X)
+```
+
+### 2. Subset Selection
+
+We explore all possible subsets of variables using brute force, and we will look at the RSS vs the number of variables. Quote from the help document of `regsubsets`, "Since this function returns separate best models of all sizes up to nvmax and since different model selection criteria such as AIC, BIC, CIC, DIC, ... differ only in how models of different sizes are compared, the results do not depend on the choice of cost-complexity tradeoff."
+
+Note that
+
+* AIC: 2k - 2log(L)
+* BIC: log(n)k - 2log(L)
+
+
+```{r subset-selection}
+res <- regsubsets(X,y,nvmax=10) # from "leaps" package
+res_summary <- summary(res)
+print(res_summary)
+```
+
+### 3. Plot Best Subset RSS vs. Set Size
+
+Is RSS always decreasing w.r.t. set size?
+
+```{r plot}
+plot(1:p, res_summary$rss, 'l')
+```
+
+### 4. Backward Selection
+
+```{r step}
+df <- cbind(X, "y" = y)
+res_step <- step(lm(y~.,data=df),direction="backward")
+summary(res_step)
+```
+So how does the backward selection function select the models? Let's look at the AIC values of all models first.
+
+```{r all-model}
+suppressMessages(require(formula.tools))
+tmp <- regsubsets(y ~ ., data=df, nbest=1000, really.big=T, intercept=F)
+all.mods <- summary(tmp)[[1]]
+all.mods <- lapply(1:nrow(all.mods), function(x)as.formula(paste("y~", paste(names(which(all.mods[x,])), collapse="+"))))
+all.lm<-lapply(all.mods, lm, df)
+kable(t(sapply(1:length(all.mods), FUN = function(x){c(as.character(all.mods[[x]]), extractAIC(all.lm[[x]])[2])})))
+```
+
+### 5. Forward Selection
+
+```{r forward}
+min.model = lm(y ~ 1, data=df)
+biggest <- formula(lm(y~.,df))
+res_forward <- step(min.model, direction="forward", scope=biggest)
+summary(res_forward)
+```

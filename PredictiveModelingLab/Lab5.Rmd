@@ -1,0 +1,280 @@
+---
+title: "R Notebook: Lab4"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(formatR)
+knitr::opts_chunk$set(
+      echo = FALSE,
+      warning=FALSE,
+      message=FALSE,
+#      tidy = TRUE,
+#      tidy.opts=list(blank=FALSE, width.cutoff=60,size = 'tiny'),
+      fig.width=5, 
+      fig.height=4 )
+
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+library(foreign)
+library(xtable)
+library(arm)
+```
+
+## Read HIV data
+
+```{r data, echo=F, out.width=50}
+hiv <- read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/risky.behavior/risky_behaviors.dta", convert.factors=TRUE)
+options(width=50)
+hiv = mutate(hiv, fupacts=round(fupacts))
+```
+
+## Fit Negative Binomial Model
+
+```{r nb, echo=T, results='asis'}
+library(MASS)
+hiv.glm.nb = glm.nb(fupacts ~ bs_hiv + log(bupacts + 1) +
+                    sex + couples + women_alone, 
+                    data=hiv)
+```
+
+Likelihood theory tells us that the maximum likelihood estimates of the parameters have an asymptotic normal distribution. If we let $\beta$  denote the vector of parameter estimates and $\Sigma$ their covariance matrix, then theory tells us
+
+$$\hat{\beta} \sim N(\beta, \Sigma)$$
+
+where the distribution shown is the multivariate normal distribution, the multivariate analog of the ordinary univariate normal distribution.
+
+From the `glm.nb` object we can extract the  estimates and the estimated variance covariance matrix using
+
+```{r}
+betahat = coef(hiv.glm.nb)
+sigma.beta = vcov(hiv.glm.nb)
+summary(hiv.glm.nb)$coef
+sqrt(diag(sigma.beta))
+```
+
+
+There is one additional parameter in a negative binomial model, the dispersion parameter $\theta$. Both the point estimate of $\theta$ and its standard error are stored as components of the glm.nb model object.    
+
+```{r}
+hiv.glm.nb$theta
+hiv.glm.nb$SE.theta
+```
+
+Asymptotically $\hat{\theta} \sim N(\theta, \sigma^2_{\theta})$ (even though it is non-negative)
+
+##  Using Simulation to Check the  Model
+
+* Find a test statistic (meaningful quantity)
+* simulate 1000 replicates of $Y$'s from the model
+* compute the test statistics for each set of replicate data
+* estimate distribution of test statistics from the simulations
+* compare observed statistics to the simulated data (predictive p-value)
+
+##  R Code using arm
+
+```{r code, echo=T}
+nsim = 10000
+n = nrow(hiv)
+X = model.matrix(hiv.glm.nb)
+class(hiv.glm.nb) <- "glm"  # over-ride class of "glm.nb"
+sim.hiv.nb = sim(hiv.glm.nb, nsim)  # use GLM to generate beta's
+sim.hiv.nb@sigma = rnorm(nsim, hiv.glm.nb$theta,
+                         hiv.glm.nb$SE.theta) # add slot for theta overide sigma
+y.rep = array(NA, c(nsim, n))   # or use matrix
+
+for (i in 1:nsim) {
+  mu = exp(X %*% sim.hiv.nb@coef[i,])
+  y.rep[i,] = rnegbin(n, mu=mu, theta=sim.hiv.nb@sigma[i])
+}
+
+perc_0 = apply(y.rep, 1, function(x) {mean(x == 0)})
+perc_10 = apply(y.rep, 1, function(x) {mean( x > 10)})
+                      
+```
+
+## Comparison
+
+```{r, fig.width=3}
+df = data.frame(perc_0=perc_0, perc_10 = perc_10)
+ggplot(df, aes(x = perc_0)) + geom_histogram() +
+geom_vline(xintercept = mean(hiv$fupacts == 0), col=2)
+ggplot(df, aes(x = perc_10)) + geom_histogram() +
+geom_vline(xintercept = mean(hiv$fupacts > 10), col=2)
+
+```
+
+##  Confidence Intervals 
+
+Observed proportion at zero is `r  round(mean(hiv$fupacts == 0),2)` and proportion at 0, 95% CI from simulated replicates:
+```{r}
+round(quantile(perc_0, c(.025,  .975)), 2)
+```
+
+Observed proportion > 10 is `r  round(mean(hiv$fupacts > 10),2)` and 95% CI from simulated replicates
+
+```{r}
+round(quantile(perc_10, c(.025, .975)), 2)
+```
+
+Observed data seem to have summaries in line with simulated replicated data based on Negative Binomial model
+
+Model appears to capture these features adequately  (may change with other summaries)
+
+
+
+##  R Code using default functions
+
+```{r code2, echo=T}
+nsim = 10000
+n = nrow(hiv)
+X = model.matrix(hiv.glm.nb)
+
+library(mvtnorm)
+sim.hiv.nb = NULL
+sim.hiv.nb$beta = rmvnorm(nsim, betahat, sigma.beta)  # use GLM to generate beta's
+sim.hiv.nb$theta = rnorm(nsim, hiv.glm.nb$theta, hiv.glm.nb$SE.theta) # add slot for theta overide sigma
+y.rep = array(NA, c(nsim, n))   # or use matrix
+
+for (i in 1:nsim) {
+  mu = exp(X %*% sim.hiv.nb$beta[i,])
+  y.rep[i,] = rnegbin(n, mu=mu, theta=sim.hiv.nb$theta[i])
+}
+
+perc_0 = apply(y.rep, 1, function(x) {mean(x == 0)})
+perc_10 = apply(y.rep, 1, function(x) {mean( x > 10)})
+                      
+```
+
+## Comparison
+
+```{r, fig.width=3}
+df = data.frame(perc_0=perc_0, perc_10 = perc_10)
+ggplot(df, aes(x = perc_0)) + geom_histogram() +
+geom_vline(xintercept = mean(hiv$fupacts == 0), col=2)
+ggplot(df, aes(x = perc_10)) + geom_histogram() +
+geom_vline(xintercept = mean(hiv$fupacts > 10), col=2)
+
+```
+
+##  Confidence Intervals 
+
+Observed proportion at zero is `r  round(mean(hiv$fupacts == 0),2)` and proportion at 0, 95% CI from simulated replicates:
+```{r}
+round(quantile(perc_0, c(.025,  .975)), 2)
+```
+
+Observed proportion > 10 is `r  round(mean(hiv$fupacts > 10),2)` and 95% CI from simulated replicates
+
+```{r}
+round(quantile(perc_10, c(.025, .975)), 2)
+```
+
+## Estimates of Relative Risks
+```{r, results='asis'}
+class(hiv.glm.nb) = c("glm.nb", "glm", "lm")
+ci = exp(cbind(coef(hiv.glm.nb),confint(hiv.glm.nb)))
+colnames(ci) = c("RR", "2.5", "97.5")
+print(xtable(ci), comment=F)
+```
+
+* 1 = no change
+* Values less than 1 imply decrease
+* Values greater than 1 imply increase
+* to obtain percent increase  RR - 1 or CI - 1 and multiply by 100%
+* to obtain percent decrease  1 - RR or 1  - CI and multiply by 100%
+
+## Conclusions
+
+The intervention had a significant impact on reducing the number of unprotected sex acts:
+
+In couples where only the woman took part in the counseling sessions, we estimated a significant decrease in unprotected sex  acts of 
+`r round((1 - exp(coef(hiv.glm.nb)["women_alone"]))*100, 0)`%;
+95% CI: (`r round(100*(1 - ci["women_alone",3:2]), 0)`)
+
+When both partners were counseled unprotected acts are expected to decrease by `r round((1 - exp(coef(hiv.glm.nb)["couples"]))*100, 0)`%  (although p.value > .05)
+
+There is no evidence to suggest that the sex of partner who reports to the researcher has an effect on the number of unprotected acts.
+
+There is evidence to suggest that if the partner who reports is HIV  positive there is a significant reduction of unprotected
+acts of 
+`r round((1 - exp(coef(hiv.glm.nb)[2]))*100, 0)`%;
+95% CI: ( `r round(100*(1 - ci[2,3:2]), 0)`)
+
+
+##  other predictive comparisons  ISLR approach
+
+Split the data into 2 groups
+
+```{r train.test}
+set.seed(8675309)
+n.train = floor(.75*n)
+train = sample(1:n, size=n.train, rep=F)
+hiv.train = hiv[train,]
+hiv.test = hiv[-train,]
+```
+
+Fit model to training data and get in sample predictions:
+
+```{r train.poi}
+hiv.train.glm = glm(fupacts~ bs_hiv + log( bupacts + 1) +
+                          sex + couples + women_alone,
+                data=hiv.train, family=poisson)
+poi.yhat.train = predict(hiv.train.glm)
+```
+
+Predict on test data:
+
+```{r test.poi}
+poi.yhat.test = predict(hiv.train.glm, newdata=hiv.test)
+```
+
+
+How good is the prediction?
+
+Use RMSE: Root (average) Mean Squared Error
+
+```{r}
+rmse = function(y, ypred) {
+  rmse = sqrt(mean((y - ypred)^2))
+  return(rmse)
+}
+
+rmse(hiv.train$fupacts, poi.yhat.train)
+rmse(hiv.test$fupacts, poi.yhat.test)
+
+```
+
+Note:  RMSE is bigger on the test set!
+
+What about NB model?
+
+
+```{r train.nb}
+hiv.train.nb = glm.nb(fupacts ~ bs_hiv + log(bupacts + 1) +
+                          sex + couples + women_alone,
+                data=hiv.train)
+nb.yhat.train = predict(hiv.train.nb)
+nb.yhat.test = predict(hiv.train.nb, newdata=hiv.test)
+
+rmse(hiv.train$fupacts, nb.yhat.train)
+rmse(hiv.test$fupacts, nb.yhat.test)
+
+```
+
+Very close!   The overdispersion correction does not seem to matter!
+
+## Coverage
+
+Define a function
+```{r}
+coverage = function(y, lrw, upr) {
+ mean(y > lrw & y > upr) 
+}
+
+```
+
+How to create a prediction interval for Poisson or NegBin predictions?
+
+Simulation!
